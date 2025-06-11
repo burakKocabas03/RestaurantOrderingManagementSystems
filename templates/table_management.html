@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <h1 class="text-center mb-4">Masa Yönetimi</h1>
+    
+    <!-- Table Layout -->
+    <div class="row">
+        <div class="col-md-8">
+            <div class="table-layout p-4 bg-light rounded">
+                <div class="row g-4">
+                    {% for table in tables %}
+                    <div class="col-md-3">
+                        <div class="table-card p-3 border rounded text-center" 
+                             data-table-id="{{ table.table_id }}"
+                             data-status="{{ table.table_status }}">
+                            <h4>Masa {{ table.table_number }}</h4>
+                            <p class="mb-2">
+                                Durum: <span class="badge {% if table.table_status == 'available' %}bg-success{% elif table.table_status == 'occupied' %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {{ table.table_status|title }}
+                                </span>
+                            </p>
+                            <p class="mb-2">
+                                Garson: {{ table.user.fullname|default:"Atanmamış" }}
+                            </p>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-primary" 
+                                        onclick="showAssignServerModal({{ table.table_id }})">
+                                    Garson Ata
+                                </button>
+                                <a href="{% url 'menu_with_table' table.table_number %}" class="btn btn-sm btn-info">
+                                    Menü & Siparişler
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Server List -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Garsonlar</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        {% for server in servers %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            {{ server.fullname }}
+                            <span class="badge bg-primary rounded-pill">
+                                {{ server.table_set.count }} Masa
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Server Modal -->
+<div class="modal fade" id="assignServerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Garson Ata</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="assignServerForm">
+                    <input type="hidden" id="tableId" name="tableId">
+                    <div class="mb-3">
+                        <label for="serverId" class="form-label">Garson Seçin</label>
+                        <select class="form-select" id="serverId" name="serverId" required>
+                            <option value="">Garson Seçin</option>
+                            {% for server in servers %}
+                            <option value="{{ server.user_id }}">{{ server.fullname }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" onclick="assignServer()">Ata</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showAssignServerModal(tableId) {
+    document.getElementById('tableId').value = tableId;
+    const modal = new bootstrap.Modal(document.getElementById('assignServerModal'));
+    modal.show();
+}
+
+function assignServer() {
+    const tableId = document.getElementById('tableId').value;
+    const serverId = document.getElementById('serverId').value;
+    
+    if (!serverId) {
+        alert('Lütfen bir garson seçin');
+        return;
+    }
+    
+    fetch('/tables/assign-server/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            table_id: tableId,
+            server_id: serverId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert(data.message || 'Garson atama işlemi başarısız oldu');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Garson atama işlemi başarısız oldu');
+    });
+}
+
+// Masa durumunu güncelle
+function updateTableStatus(tableId, status) {
+    fetch('/tables/update-status/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            table_id: tableId,
+            status: status
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert(data.message || 'Masa durumu güncellenemedi');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Masa durumu güncellenemedi');
+    });
+}
+</script>
+{% endblock %} 

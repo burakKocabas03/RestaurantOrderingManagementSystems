@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": "venv",
+  "pythonVersion": "3.13",
+  "reportMissingImports": true,
+  "typeCheckingMode": "basic",
+  "plugins": ["mypy_django_plugin.main"],
+  "reportAttributeAccessIssue": false
+}

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center mb-4">Hoş Geldiniz</h1>
+    
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Masalar</h5>
+                    <div class="row g-4">
+                        {% for table in tables %}
+                        <div class="col-md-4">
+                            <div class="card {% if table.table_status == 'available' %}bg-success{% elif table.table_status == 'occupied' %}bg-warning{% else %}bg-danger{% endif %} text-white">
+                                <div class="card-body text-center">
+                                    <h5 class="card-title">Masa {{ table.table_number }}</h5>
+                                    <p class="card-text">
+                                        Durum: {{ table.table_status|title }}<br>
+                                        {% if table.user %}
+                                        Garson: {{ table.user.fullname }}
+                                        {% endif %}
+                                    </p>
+                                    <a href="/menu/{{ table.table_number }}/" class="btn btn-light">Menüyü Görüntüle</a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

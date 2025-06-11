@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center mb-4">Payment for Table {{ table.table_number }}</h1>
+    
+    <!-- Order Summary -->
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3 class="mb-0">Order Summary</h3>
+                </div>
+                <div class="card-body">
+                    {% for order in orders %}
+                    <div class="order-summary mb-4">
+                        <h5>Order #{{ order.order_id }}</h5>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Quantity</th>
+                                    <th>Price</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in order.orderitem_set.all %}
+                                <tr>
+                                    <td>{{ item.item.name }}</td>
+                                    <td>{{ item.quantity }}</td>
+                                    <td>${{ item.unit_price }}</td>
+                                    <td>${{ item.unit_price|multiply:item.quantity }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Payment Options -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="mb-0">Payment</h3>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h4>Total Amount: ${{ total_amount }}</h4>
+                    </div>
+                    
+                    <div class="payment-options">
+                        <h5>Payment Method</h5>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="paymentMethod" id="cash" value="cash">
+                            <label class="form-check-label" for="cash">
+                                Cash
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="paymentMethod" id="credit" value="credit">
+                            <label class="form-check-label" for="credit">
+                                Credit Card
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="paymentMethod" id="online" value="online">
+                            <label class="form-check-label" for="online">
+                                Online Payment
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-primary w-100 mt-4" onclick="processPayment()">
+                        Process Payment
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function processPayment() {
+    const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+    
+    if (!paymentMethod) {
+        alert('Please select a payment method');
+        return;
+    }
+    
+    fetch('/process-payment/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            table_id: {{ table.table_id }},
+            payment_method: paymentMethod,
+            amount: {{ total_amount }}
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Payment processed successfully!');
+            window.location.href = '/tables/';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error processing payment');
+    });
+}
+</script>
+{% endblock %} 

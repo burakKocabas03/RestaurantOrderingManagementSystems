@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title mb-0">Sipariş #{{ order.order_id }}</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h5>Masa Bilgileri</h5>
+                            <p>
+                                Masa No: {{ order.table.table_number }}<br>
+                                Durum: 
+                                <span class="badge {% if order.table.table_status == 'available' %}bg-success{% elif order.table.table_status == 'occupied' %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {{ order.table.table_status|title }}
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Sipariş Bilgileri</h5>
+                            <p>
+                                Durum: 
+                                <span class="badge {% if order.status == 'received' %}bg-warning{% elif order.status == 'preparing' %}bg-info{% elif order.status == 'ready' %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {{ order.status|title }}
+                                </span><br>
+                                Tarih: {{ order.created_at|date:"d.m.Y H:i" }}<br>
+                                Tip: {{ order.type|title }}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <h5>Sipariş Detayları</h5>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Ürün</th>
+                                    <th>Adet</th>
+                                    <th>Birim Fiyat</th>
+                                    <th>Toplam</th>
+                                    <th>Not</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in order_items %}
+                                <tr>
+                                    <td>{{ item.item.name }}</td>
+                                    <td>{{ item.quantity }}</td>
+                                    <td>{{ item.unit_price }} TL</td>
+                                    <td>{{ item.unit_price|multiply:item.quantity }} TL</td>
+                                    <td>{{ item.notes|default:"-" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" class="text-end"><strong>Toplam:</strong></td>
+                                    <td colspan="2">
+                                        <strong>{{ order.orderitem_set.all|sum_total }} TL</strong>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <a href="{% url 'order_list' %}" class="btn btn-secondary">Geri Dön</a>
+                        {% if order.status == 'received' %}
+                        <button class="btn btn-success" onclick="updateOrderStatus({{ order.order_id }}, 'preparing')">
+                            Hazırlanıyor
+                        </button>
+                        {% elif order.status == 'preparing' %}
+                        <button class="btn btn-info" onclick="updateOrderStatus({{ order.order_id }}, 'ready')">
+                            Hazır
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateOrderStatus(orderId, newStatus) {
+    fetch(`/orders/${orderId}/update-status/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            status: newStatus
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert(data.message || 'Sipariş durumu güncellenemedi');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Sipariş durumu güncellenemedi');
+    });
+}
+</script>
+{% endblock %} 

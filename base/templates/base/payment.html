@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Ödeme</h3>
+                </div>
+                <div class="card-body">
+                    <div class="orders-summary mb-4">
+                        <h4>Ödenmemiş Siparişler</h4>
+                        <form id="payment-form">
+                            {% for order in orders %}
+                            <div class="order-card mb-3 p-3 border rounded">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input order-checkbox" type="checkbox" 
+                                           value="{{ order.order_id }}" id="order-{{ order.order_id }}"
+                                           data-amount="{{ order.total_amount }}">
+                                    <label class="form-check-label" for="order-{{ order.order_id }}">
+                                        Sipariş #{{ order.order_id }} - {{ order.created_at|date:"d/m/Y H:i" }}
+                                    </label>
+                                </div>
+                                <div class="order-items">
+                                    {% for item in order.items %}
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span>{{ item.item.name }} x {{ item.quantity }}</span>
+                                        <span>{{ item.unit_price|multiply:item.quantity }} TL</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <div class="order-total text-end">
+                                    <strong>Toplam: {{ order.total_amount }} TL</strong>
+                                </div>
+                            </div>
+                            {% endfor %}
+
+                            <div class="total-amount mt-3">
+                                <h5>Seçili Siparişler Toplamı: <span id="selected-total">0.00</span> TL</h5>
+                            </div>
+
+                            <div class="payment-method mt-4">
+                                <h4>Ödeme Yöntemi</h4>
+                                <div class="form-group mb-3">
+                                    <select class="form-control" id="payment-method" required>
+                                        <option value="">Seçiniz</option>
+                                        <option value="cash">Nakit</option>
+                                        <option value="credit_card">Kredi Kartı</option>
+                                        <option value="in_app">Uygulama İçi Ödeme</option>
+                                    </select>
+                                </div>
+
+                                <div id="credit-card-details" class="d-none">
+                                    <div class="form-group mb-3">
+                                        <label for="card-number">Kart Numarası</label>
+                                        <input type="text" class="form-control" id="card-number" placeholder="1234 5678 9012 3456">
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-group mb-3">
+                                                <label for="expiry-date">Son Kullanma Tarihi</label>
+                                                <input type="text" class="form-control" id="expiry-date" placeholder="MM/YY">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-group mb-3">
+                                                <label for="cvv">CVV</label>
+                                                <input type="text" class="form-control" id="cvv" placeholder="123">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="text-center mt-4">
+                                <button type="submit" class="btn btn-primary btn-lg">Ödemeyi Tamamla</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const paymentMethod = document.getElementById('payment-method');
+    const creditCardDetails = document.getElementById('credit-card-details');
+    const paymentForm = document.getElementById('payment-form');
+    const orderCheckboxes = document.querySelectorAll('.order-checkbox');
+    const selectedTotal = document.getElementById('selected-total');
+
+    // Ödeme yöntemi değiştiğinde kredi kartı detaylarını göster/gizle
+    paymentMethod.addEventListener('change', function() {
+        if (this.value === 'credit_card') {
+            creditCardDetails.classList.remove('d-none');
+        } else {
+            creditCardDetails.classList.add('d-none');
+        }
+    });
+
+    // Sipariş seçildiğinde toplam tutarı güncelle
+    orderCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            updateTotal();
+        });
+    });
+
+    function updateTotal() {
+        let total = 0;
+        orderCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                total += parseFloat(checkbox.dataset.amount);
+            }
+        });
+        selectedTotal.textContent = total.toFixed(2);
+    }
+
+    // Form gönderildiğinde
+    paymentForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const selectedOrders = Array.from(orderCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+
+        if (selectedOrders.length === 0) {
+            alert('Lütfen en az bir sipariş seçin!');
+            return;
+        }
+
+        const paymentMethod = document.getElementById('payment-method').value;
+        const totalAmount = selectedTotal.textContent;
+
+        try {
+            const response = await fetch('/process-payment/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    order_ids: selectedOrders,
+                    payment_method: paymentMethod,
+                    amount: totalAmount
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                alert('Ödeme başarıyla tamamlandı!');
+                window.location.href = '/'; // Ana sayfaya yönlendir
+            } else {
+                alert('Ödeme işlemi başarısız: ' + data.message);
+            }
+        } catch (error) {
+            alert('Bir hata oluştu: ' + error.message);
+        }
+    });
+});
+</script>
+{% endblock %} 

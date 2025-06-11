@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center mb-4">Siparişler</h1>
+    
+    <div class="row">
+        {% for order in orders %}
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Sipariş #{{ order.order_id }}</h5>
+                    <span class="badge {% if order.status == 'received' %}bg-warning{% elif order.status == 'preparing' %}bg-info{% elif order.status == 'ready' %}bg-success{% else %}bg-secondary{% endif %}">
+                        {{ order.status|title }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <p><strong>Masa:</strong> {{ order.table.table_number }}</p>
+                    <p><strong>Tarih:</strong> {{ order.created_at|date:"d/m/Y H:i" }}</p>
+                    
+                    <h6>Sipariş Detayları:</h6>
+                    <ul class="list-group mb-3">
+                        {% for item in order.orderitem_set.all %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <span>{{ item.item.name }}</span>
+                                <small class="text-muted d-block">x{{ item.quantity }}</small>
+                            </div>
+                            <span>{{ item.unit_price }} TL</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <div class="btn-group w-100">
+                        {% if order.status == 'received' %}
+                        <button class="btn btn-info" onclick="updateOrderStatus({{ order.order_id }}, 'preparing')">
+                            Hazırlanıyor
+                        </button>
+                        {% elif order.status == 'preparing' %}
+                        <button class="btn btn-success" onclick="updateOrderStatus({{ order.order_id }}, 'ready')">
+                            Hazır
+                        </button>
+                        {% elif order.status == 'ready' %}
+                        <button class="btn btn-primary" onclick="updateOrderStatus({{ order.order_id }}, 'completed')">
+                            Tamamlandı
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="alert alert-info">
+                Aktif sipariş bulunmuyor.
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateOrderStatus(orderId, newStatus) {
+    fetch(`/orders/${orderId}/update-status/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            status: newStatus
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert(data.message || 'Sipariş durumu güncellenirken bir hata oluştu');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Sipariş durumu güncellenirken bir hata oluştu');
+    });
+}
+</script>
+{% endblock %} 
+{% endblock %} 

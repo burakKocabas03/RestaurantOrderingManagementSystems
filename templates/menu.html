@@ -1,0 +1,291 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center mb-4">Menu</h1>
+    
+    {% if table %}
+    <div class="alert alert-info">
+        <h4>Masa {{ table.table_number }}</h4>
+        <p>Durum: {{ table.table_status|title }}</p>
+        {% if active_orders %}
+        <div class="mt-2">
+            <h5>Aktif Siparişler:</h5>
+            <ul>
+                {% for order in active_orders %}
+                <li>
+                    Sipariş #{{ order.order_id }} - 
+                    <span class="badge {% if order.status == 'received' %}bg-warning{% elif order.status == 'preparing' %}bg-info{% elif order.status == 'ready' %}bg-success{% else %}bg-secondary{% endif %}">
+                        {{ order.status|title }}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        <div class="text-end mb-3">
+            <button class="btn btn-success" onclick="window.location.href='/payment/{{ table.table_id }}/'">Ödeme Yap</button>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Categories -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-outline-primary active" data-category="all">Tümü</button>
+                {% for category in categories %}
+                <button type="button" class="btn btn-outline-primary" data-category="{{ category.category_id }}">
+                    {{ category.category_name }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Menu Items -->
+    <div class="row">
+        {% for item in menu_items %}
+        <div class="col-md-4 mb-4 menu-item" data-category="{{ item.category.category_id }}">
+            <div class="card h-100">
+                {% if item.image %}
+                <img src="{{ item.image.url }}" class="card-img-top" alt="{{ item.name }}">
+                {% endif %}
+                <div class="card-body">
+                    <h5 class="card-title">{{ item.name }}</h5>
+                    <p class="card-text">{{ item.description }}</p>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            {% if item.calories %}
+                            Kalori: {{ item.calories }} |
+                            {% endif %}
+                            Fiyat: {{ item.price }} TL
+                        </small>
+                    </p>
+                    {% if item.allergens %}
+                    <p class="card-text">
+                        <small class="text-danger">
+                            Alerjenler: {{ item.allergens }}
+                        </small>
+                    </p>
+                    {% endif %}
+                    {% if table %}
+                    <div class="input-group mb-3">
+                        <input type="number" class="form-control" id="quantity-{{ item.item_id }}" value="1" min="1">
+                        <button class="btn btn-primary" onclick="addToCart('{{ item.item_id }}', '{{ item.name }}', {{ item.price }})">
+                            Sepete Ekle
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" class="form-control" id="notes-{{ item.item_id }}" placeholder="Notlar...">
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Cart Modal -->
+<div class="modal fade" id="cartModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Sepetim</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="cartItems"></div>
+                <div class="text-end mt-3">
+                    <h5>Toplam: <span id="cartTotal">0</span> TL</h5>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Alışverişe Devam Et</button>
+                <button type="button" class="btn btn-success" id="placeOrderBtn">Sipariş Ver</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast for cart notifications -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="cartToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">Sepet</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="cartToastBody"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tableNumber = "{{ table.table_number }}";
+    
+    // Kategori filtreleme
+    const categoryButtons = document.querySelectorAll('[data-category]');
+    const menuItems = document.querySelectorAll('.menu-item');
+    
+    categoryButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const category = this.getAttribute('data-category');
+            
+            // Aktif buton stilini güncelle
+            categoryButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Menü öğelerini filtrele
+            menuItems.forEach(item => {
+                if (category === 'all' || item.getAttribute('data-category') === category) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+    });
+    
+    // Sipariş ver butonu
+    document.getElementById('placeOrderBtn').addEventListener('click', function() {
+        fetch(`/menu/${tableNumber}/place-order/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                type: 'dine_in'
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Siparişiniz başarıyla alındı!');
+                const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
+                cartModal.hide();
+                location.reload();
+            } else {
+                alert(data.message || 'Sipariş verilirken bir hata oluştu');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Sipariş verilirken bir hata oluştu');
+        });
+    });
+});
+
+function addToCart(itemId, itemName, price) {
+    const quantity = document.getElementById(`quantity-${itemId}`).value;
+    const notes = document.getElementById(`notes-${itemId}`).value;
+    const tableNumber = "{{ table.table_number }}";
+    
+    fetch(`/menu/${tableNumber}/add-to-cart/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            item_id: itemId,
+            quantity: quantity,
+            notes: notes
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Sepete eklendi mesajı göster
+            const toast = new bootstrap.Toast(document.getElementById('cartToast'));
+            document.getElementById('cartToastBody').textContent = data.message;
+            toast.show();
+            
+            // Sepet özetini güncelle
+            updateCartSummary();
+            
+            // Sepet modalını göster
+            const cartModal = new bootstrap.Modal(document.getElementById('cartModal'));
+            cartModal.show();
+            
+            // Input alanlarını temizle
+            document.getElementById(`quantity-${itemId}`).value = 1;
+            document.getElementById(`notes-${itemId}`).value = '';
+        } else {
+            alert(data.message || 'Ürün sepete eklenirken bir hata oluştu');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Ürün sepete eklenirken bir hata oluştu');
+    });
+}
+
+function updateCartSummary() {
+    const tableNumber = "{{ table.table_number }}";
+    fetch(`/menu/${tableNumber}/cart-summary/`)
+        .then(response => response.json())
+        .then(data => {
+            const cartItems = document.getElementById('cartItems');
+            cartItems.innerHTML = '';
+            
+            data.items.forEach(item => {
+                cartItems.innerHTML += `
+                    <div class="cart-item d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <h6 class="mb-0">${item.name}</h6>
+                            <small class="text-muted">${item.quantity} x ${item.unit_price} TL</small>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="fw-bold me-3">${item.total_price} TL</span>
+                            <button class="btn btn-danger btn-sm" onclick="removeFromCart(${item.item_id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('cartTotal').textContent = `${data.total} TL`;
+        });
+}
+
+function removeFromCart(itemId) {
+    const tableNumber = "{{ table.table_number }}";
+    
+    fetch(`/menu/${tableNumber}/remove-from-cart/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            item_id: itemId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Sepetten çıkarıldı mesajı göster
+            const toast = new bootstrap.Toast(document.getElementById('cartToast'));
+            document.getElementById('cartToastBody').textContent = data.message;
+            toast.show();
+            
+            // Sepet özetini güncelle
+            updateCartSummary();
+        } else {
+            alert(data.message || 'Ürün sepetten çıkarılırken bir hata oluştu');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Ürün sepetten çıkarılırken bir hata oluştu');
+    });
+}
+
+// Sayfa yüklendiğinde sepet özetini güncelle
+document.addEventListener('DOMContentLoaded', function() {
+    updateCartSummary();
+});
+</script>
+{% endblock %} 
