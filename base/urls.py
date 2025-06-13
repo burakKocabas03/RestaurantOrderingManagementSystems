@@ -44,4 +44,7 @@ urlpatterns = [
     path('process-payment/<int:order_id>/', views.process_payment, name='process_payment'),
     path('payment-status/<int:order_id>/', views.get_payment_status, name='get_payment_status'),
     path('order-details/<int:order_id>/', views.get_order_details, name='get_order_details'),
+    path('tables/<int:table_id>/orders/', views.table_orders_api, name='table_orders_api'),
+    path('tables/<int:table_id>/orders/<int:order_id>/delete/', views.delete_order, name='delete_order'),
+    path('permission-denied/', views.custom_permission_denied_view, name='permission_denied'),
 ]

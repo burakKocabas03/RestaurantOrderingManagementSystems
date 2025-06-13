@@ -2,28 +2,27 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h1 class="text-center mb-4">Mutfak Ekranı</h1>
+    <h1 class="text-center mb-4"><i class="bi bi-egg-fried"></i> Mutfak Ekranı</h1>
     
     <div class="row">
         {% for order in orders %}
-        <div class="col-md-6 mb-4">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Sipariş #{{ order.order_id }}</h5>
-                    <span class="badge {% if order.status == 'received' %}bg-warning{% elif order.status == 'preparing' %}bg-info{% elif order.status == 'ready' %}bg-success{% else %}bg-secondary{% endif %}">
-                        {{ order.status|title }}
+        <div class="col-lg-4 col-md-6 mb-4">
+            <div class="card shadow-lg border-0">
+                <div class="card-header d-flex justify-content-between align-items-center bg-light">
+                    <h5 class="mb-0"><i class="bi bi-receipt-cutoff"></i> Sipariş #{{ order.order_id }}</h5>
+                    <span class="badge px-3 py-2 fs-6 {% if order.status == 'received' %}bg-warning text-dark{% elif order.status == 'preparing' %}bg-info text-dark{% elif order.status == 'ready' %}bg-success{% else %}bg-secondary{% endif %}">
+                        <i class="bi bi-hourglass-split"></i> {{ order.status|title }}
                     </span>
                 </div>
                 <div class="card-body">
-                    <p><strong>Masa:</strong> {{ order.table.table_number }}</p>
-                    <p><strong>Tarih:</strong> {{ order.created_at|date:"d/m/Y H:i" }}</p>
-                    
-                    <h6>Sipariş Detayları:</h6>
+                    <p class="mb-1"><strong><i class="bi bi-table"></i> Masa:</strong> <span class="badge bg-dark">{{ order.table.table_number }}</span></p>
+                    <p class="mb-3"><strong><i class="bi bi-clock"></i> Tarih:</strong> {{ order.created_at|date:"d/m/Y H:i" }}</p>
+                    <h6 class="mb-2"><i class="bi bi-list-ul"></i> Sipariş Detayları:</h6>
                     <ul class="list-group mb-3">
                         {% for item in order.orderitem_set.all %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <li class="list-group-item d-flex justify-content-between align-items-center border-0 border-bottom">
                             <div>
-                                <span>{{ item.item.name }}</span>
+                                <span class="fw-bold">{{ item.item.name }}</span>
                                 <small class="text-muted d-block">x{{ item.quantity }}</small>
                                 {% if item.notes %}
                                 <small class="text-danger d-block">Not: {{ item.notes }}</small>
@@ -38,11 +37,11 @@
                     <div class="btn-group w-100">
                         {% if order.status == 'received' %}
                         <button class="btn btn-info" onclick="updateOrderStatus({{ order.order_id }}, 'preparing')">
-                            Hazırlanıyor
+                            <i class="bi bi-tools"></i> Hazırlanıyor
                         </button>
                         {% elif order.status == 'preparing' %}
                         <button class="btn btn-success" onclick="updateOrderStatus({{ order.order_id }}, 'ready')">
-                            Hazır
+                            <i class="bi bi-check-circle"></i> Hazır
                         </button>
                         {% endif %}
                     </div>
