@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">Onay Bekleyen Nakit Ödemeler</h2>
+    
+    {% if pending_payments %}
+    <div class="row">
+        {% for payment in pending_payments %}
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Sipariş #{{ payment.order.order_id }}</h5>
+                    <span class="badge bg-light text-dark">Masa {{ payment.order.table.table_number }}</span>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6>Sipariş Detayları:</h6>
+                        <ul class="list-group">
+                            {% for item in payment.order.orderitem_set.all %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ item.item.name }}
+                                <span>{{ item.quantity }} x {{ item.unit_price }} TL</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mb-3">
+                        <strong>Toplam Tutar:</strong>
+                        <strong>{{ payment.amount }} TL</strong>
+                    </div>
+                    
+                    <form class="approve-payment-form" data-payment-id="{{ payment.id }}" data-amount="{{ payment.amount }}">
+                        <div class="mb-3">
+                            <label for="cash-received-{{ payment.id }}" class="form-label">Alınan Nakit:</label>
+                            <div class="input-group">
+                                <input type="number" 
+                                       class="form-control cash-received" 
+                                       id="cash-received-{{ payment.id }}"
+                                       step="0.01" 
+                                       min="{{ payment.amount }}"
+                                       required>
+                                <span class="input-group-text">TL</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3 change-amount" style="display: none;">
+                            <label class="form-label">Para Üstü:</label>
+                            <div class="alert alert-info mb-0">
+                                <span class="change-value">0.00</span> TL
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-check-circle-fill me-2"></i>Ödemeyi Onayla
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle-fill me-2"></i>Onay bekleyen nakit ödeme bulunmuyor.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Başarılı Ödeme Modalı -->
+<div class="modal fade" id="successModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-check-circle-fill me-2"></i>Ödeme Onaylandı
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <p class="mb-3">Nakit ödeme başarıyla onaylandı.</p>
+                <div class="alert alert-info">
+                    <strong>Para Üstü:</strong>
+                    <span id="modalChangeAmount">0.00</span> TL
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Para üstü hesaplama
+    document.querySelectorAll('.cash-received').forEach(input => {
+        input.addEventListener('input', function() {
+            const form = this.closest('form');
+            const amount = parseFloat(form.dataset.amount);
+            const received = parseFloat(this.value) || 0;
+            const change = Math.max(0, received - amount);
+            
+            const changeDiv = form.querySelector('.change-amount');
+            const changeValue = form.querySelector('.change-value');
+            
+            if (received >= amount) {
+                changeDiv.style.display = 'block';
+                changeValue.textContent = change.toFixed(2);
+            } else {
+                changeDiv.style.display = 'none';
+            }
+        });
+    });
+    
+    // Ödeme onaylama
+    document.querySelectorAll('.approve-payment-form').forEach(form => {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const paymentId = this.dataset.paymentId;
+            const cashReceived = this.querySelector('.cash-received').value;
+            
+            try {
+                const response = await fetch(`/approve-cash-payment/${paymentId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        cash_received: cashReceived
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Başarılı modal göster
+                    const modal = new bootstrap.Modal(document.getElementById('successModal'));
+                    document.getElementById('modalChangeAmount').textContent = data.cash_returned.toFixed(2);
+                    modal.show();
+                    
+                    // Modal kapandığında kartı kaldır
+                    const card = this.closest('.col-md-6');
+                    document.getElementById('successModal').addEventListener('hidden.bs.modal', function() {
+                        card.remove();
+                        
+                        // Eğer başka ödeme kalmadıysa mesaj göster
+                        if (document.querySelectorAll('.approve-payment-form').length === 0) {
+                            const container = document.querySelector('.container');
+                            container.innerHTML = `
+                                <h2 class="mb-4">Onay Bekleyen Nakit Ödemeler</h2>
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle-fill me-2"></i>Onay bekleyen nakit ödeme bulunmuyor.
+                                </div>
+                            `;
+                        }
+                    });
+                } else {
+                    alert(data.message || 'Bir hata oluştu');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Bir hata oluştu');
+            }
+        });
+    });
+    
+    // CSRF token alma fonksiyonu
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+});
+</script>
+{% endblock %} 

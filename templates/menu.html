@@ -67,7 +67,7 @@
                     <h5 class="card-title fw-bold text-primary">{{ item.name }}</h5>
                     <p class="card-text text-secondary">{{ item.description }}</p>
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge bg-success fs-6"><i class="bi bi-currency-dollar"></i> {{ item.price }} TL</span>
+                        <span class="badge bg-success fs-6">{{ item.price }} TL</span>
                         {% if item.calories %}
                         <span class="badge bg-warning text-dark fs-6"><i class="bi bi-fire"></i> {{ item.calories }} kcal</span>
                         {% endif %}
@@ -183,6 +183,18 @@
   </div>
 </div>
 
+<div class="modal fade" id="cartNotificationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-4">
+        <i class="bi bi-cart-check-fill text-success" style="font-size: 3rem;"></i>
+        <h4 class="mt-3 mb-2">Ürün Sepete Eklendi</h4>
+        <p class="mb-0" id="cartNotificationText"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
 .menu-card:hover {
     transform: translateY(-8px) scale(1.03);
@@ -279,24 +291,34 @@ function addToCart(itemId, itemName, price) {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            // Sepete eklendi mesajı göster
-            const toast = new bootstrap.Toast(document.getElementById('cartToast'));
-            document.getElementById('cartToastBody').textContent = data.message;
-            toast.show();
+            // Bildirim modalını göster
+            document.getElementById('cartNotificationText').textContent = `${quantity}x ${itemName}`;
+            const modal = new bootstrap.Modal(document.getElementById('cartNotificationModal'));
+            modal.show();
+            
+            // 2 saniye sonra modalı kapat
+            setTimeout(() => {
+                modal.hide();
+            }, 2000);
             
             // Sepet özetini güncelle
             updateCartSummary();
             
-            // Input alanlarını temizle
+            // Input alanlarını sıfırla
             document.getElementById(`quantity-${itemId}`).value = 1;
             document.getElementById(`notes-${itemId}`).value = '';
         } else {
-            alert(data.message || 'Ürün sepete eklenirken bir hata oluştu');
+            // Hata modalını göster
+            document.getElementById('orderErrorText').textContent = data.message || 'Ürün sepete eklenirken bir hata oluştu';
+            const errorModal = new bootstrap.Modal(document.getElementById('orderErrorModal'));
+            errorModal.show();
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Ürün sepete eklenirken bir hata oluştu');
+        document.getElementById('orderErrorText').textContent = 'Ürün sepete eklenirken bir hata oluştu';
+        const errorModal = new bootstrap.Modal(document.getElementById('orderErrorModal'));
+        errorModal.show();
     });
 }
 

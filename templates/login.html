@@ -1,14 +1,37 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="text-center">Login</h3>
+<style>
+    .login-card {
+        border-radius: 18px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        background: linear-gradient(120deg, #f8fafc 60%, #e3f0ff 100%);
+        border: none;
+    }
+    .login-icon {
+        font-size: 3.5rem;
+        color: #0d6efd;
+        margin-bottom: 1rem;
+        filter: drop-shadow(0 2px 8px #0d6efd33);
+    }
+    .login-card .form-control:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.2rem #0d6efd33;
+    }
+    .login-title {
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+</style>
+<div class="container min-vh-100 d-flex align-items-center justify-content-center">
+    <div class="row w-100 justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card login-card p-4">
+                <div class="text-center">
+                    <i class="bi bi-person-circle login-icon"></i>
+                    <h2 class="login-title mb-3">Giriş Yap</h2>
                 </div>
-                <div class="card-body">
+                <div class="card-body pt-0">
                     {% if messages %}
                         {% for message in messages %}
                             <div class="alert alert-danger" role="alert">{{ message }}</div>
@@ -19,18 +42,18 @@
                         {{ error }}
                     </div>
                     {% endif %}
-                    <form method="post">
+                    <form method="post" autocomplete="off">
                         {% csrf_token %}
                         <div class="mb-3">
-                            <label for="username" class="form-label">Username</label>
-                            <input type="text" class="form-control" id="username" name="username" required>
+                            <label for="username" class="form-label">Kullanıcı Adı</label>
+                            <input type="text" class="form-control" id="username" name="username" required autofocus>
                         </div>
                         <div class="mb-3">
-                            <label for="password" class="form-label">Password</label>
+                            <label for="password" class="form-label">Şifre</label>
                             <input type="password" class="form-control" id="password" name="password" required>
                         </div>
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">Login</button>
+                        <div class="d-grid mb-2">
+                            <button type="submit" class="btn btn-primary btn-lg shadow-sm">Giriş Yap</button>
                         </div>
                     </form>
                 </div>

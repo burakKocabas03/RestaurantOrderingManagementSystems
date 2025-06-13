@@ -93,9 +93,23 @@
     <div class="modal-content">
       <div class="modal-body text-center p-5">
         <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
-        <h3 class="mt-3 mb-2">Ödeme Başarılı!</h3>
-        <p class="mb-4">Ödemeniz başarıyla tamamlandı.</p>
+        <h3 class="mt-3 mb-2">Ödeme İşlemi Başarılı!</h3>
+        <p id="payment-success-message" class="mb-4">Ödemeniz başarıyla tamamlandı.</p>
         <button type="button" class="btn btn-success px-4" data-bs-dismiss="modal">Kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hata Modalı -->
+<div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-5">
+        <i class="bi bi-exclamation-circle-fill text-danger" style="font-size: 4rem;"></i>
+        <h3 class="mt-3 mb-2">Hata!</h3>
+        <p id="error-message" class="mb-4"></p>
+        <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Kapat</button>
       </div>
     </div>
   </div>
@@ -111,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const paymentForm = document.getElementById('payment-form');
     const orderCheckboxes = document.querySelectorAll('.order-checkbox');
     const selectedTotal = document.getElementById('selected-total');
+    const paymentSuccessMessage = document.getElementById('payment-success-message');
 
     // Ödeme yöntemi değiştiğinde kredi kartı detaylarını göster/gizle
     paymentMethod.addEventListener('change', function() {
@@ -148,11 +163,16 @@ document.addEventListener('DOMContentLoaded', function() {
             .map(cb => cb.value);
 
         if (selectedOrders.length === 0) {
-            alert('Lütfen en az bir sipariş seçin!');
+            showError('Lütfen en az bir sipariş seçin!');
             return;
         }
 
         const paymentMethod = document.getElementById('payment-method').value;
+        if (!paymentMethod) {
+            showError('Lütfen bir ödeme yöntemi seçin!');
+            return;
+        }
+
         const totalAmount = selectedTotal.textContent;
 
         try {
@@ -170,29 +190,40 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const data = await response.json();
 
-            if (data.status === 'success') {
-                // Modern başarı popup'ı göster
+            if (data.status === 'success' || data.status === 'pending') {
                 paidOrderIds = selectedOrders;
                 const modal = new bootstrap.Modal(document.getElementById('paymentSuccessModal'));
+                
+                // Nakit ödeme için farklı mesaj göster
+                if (data.status === 'pending') {
+                    paymentSuccessMessage.innerHTML = 'Nakit ödeme kaydedildi.<br>Garson onayı bekleniyor.';
+                } else {
+                    paymentSuccessMessage.innerHTML = 'Ödemeniz başarıyla tamamlandı.';
+                }
+                
                 modal.show();
+
+                // Ödenen siparişleri ekrandan kaldır
+                paidOrderIds.forEach(function(orderId) {
+                    const card = document.getElementById('order-' + orderId)?.closest('.order-card');
+                    if (card) card.remove();
+                });
+                paidOrderIds = [];
+                updateTotal();
             } else {
-                alert('Ödeme işlemi başarısız: ' + data.message);
+                showError(data.message || 'Ödeme işlemi başarısız!');
             }
         } catch (error) {
-            alert('Bir hata oluştu: ' + error.message);
+            showError('Bir hata oluştu: ' + error.message);
         }
     });
-
-    // Modal kapatılınca ödenen siparişleri ekrandan sil
-    const paymentSuccessModal = document.getElementById('paymentSuccessModal');
-    paymentSuccessModal.addEventListener('hidden.bs.modal', function () {
-        paidOrderIds.forEach(function(orderId) {
-            const card = document.getElementById('order-' + orderId)?.closest('.order-card');
-            if (card) card.remove();
-        });
-        paidOrderIds = [];
-        updateTotal();
-    });
 });
+
+function showError(message) {
+    const errorMessage = document.getElementById('error-message');
+    errorMessage.textContent = message;
+    const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+    modal.show();
+}
 </script>
 {% endblock %} 

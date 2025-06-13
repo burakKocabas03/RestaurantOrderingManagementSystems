@@ -170,6 +170,7 @@ class Payment(models.Model):
     
     PAYMENT_STATUS = [
         ('pending', 'Beklemede'),
+        ('waiter_approval', 'Garson Onayı Bekliyor'),
         ('completed', 'Tamamlandı'),
         ('failed', 'Başarısız')
     ]
@@ -182,9 +183,18 @@ class Payment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     transaction_id = models.CharField(max_length=100, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
+    waiter = models.ForeignKey('Staff', on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_payments')
+    waiter_approval_time = models.DateTimeField(null=True, blank=True)
+    cash_received = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    cash_returned = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
         return f"Payment for Order #{self.order.order_id} - {self.amount} TL"
+
+    def save(self, *args, **kwargs):
+        if self.payment_method == 'cash' and self.status == 'pending':
+            self.status = 'waiter_approval'
+        super().save(*args, **kwargs)
 
 
 class Ingredient(models.Model):
@@ -225,14 +235,14 @@ class Staff(models.Model):
         ('kitchen', 'Mutfak'),
     )
     
-    user = models.OneToOneField('Users', on_delete=models.CASCADE)
+    user = models.OneToOneField('Users', on_delete=models.CASCADE, related_name='staff')
     user_type = models.CharField(max_length=20, choices=ROLES)
     schedule = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.user.username
+        return f"{self.user.username} - {self.get_user_type_display()}"
 
     class Meta:
         managed = True
