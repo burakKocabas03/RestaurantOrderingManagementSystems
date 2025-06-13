@@ -9,27 +9,32 @@
         <div class="col-md-8">
             <div class="table-layout p-4 bg-light rounded">
                 <div class="row g-4">
-                    {% for table in tables %}
+                    {% for t in tables_with_orders %}
                     <div class="col-md-3">
-                        <div class="table-card p-3 border rounded text-center" 
-                             data-table-id="{{ table.table_id }}"
-                             data-status="{{ table.table_status }}">
-                            <h4>Masa {{ table.table_number }}</h4>
+                        <div class="table-card p-3 border rounded text-center position-relative" 
+                             data-table-id="{{ t.table.table_id }}"
+                             data-status="{{ t.table.table_status }}">
+                            <button type="button" class="btn btn-sm btn-warning position-absolute top-0 end-0 m-2" onclick="event.stopPropagation(); showOrdersModal({{ t.table.table_id }})">Sipariş</button>
+                            <h4>
+                              <a href="{% url 'menu_with_table' t.table.table_number %}" class="text-decoration-none text-dark fw-bold" style="cursor:pointer;">
+                                Masa {{ t.table.table_number }}
+                              </a>
+                            </h4>
                             <p class="mb-2">
-                                Durum: <span class="badge {% if table.table_status == 'available' %}bg-success{% elif table.table_status == 'occupied' %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {{ table.table_status|title }}
+                                Durum: <span class="badge {% if t.table.table_status == 'available' %}bg-success{% elif t.table.table_status == 'occupied' %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {{ t.table.table_status|title }}
                                 </span>
                             </p>
                             <p class="mb-2">
-                                Garson: {{ table.user.fullname|default:"Atanmamış" }}
+                                Garson: {{ t.table.user.fullname|default:"Atanmamış" }}
                             </p>
                             <div class="btn-group">
                                 <button type="button" class="btn btn-sm btn-primary" 
-                                        onclick="showAssignServerModal({{ table.table_id }})">
+                                        onclick="showAssignServerModal({{ t.table.table_id }})">
                                     Garson Ata
                                 </button>
-                                <a href="{% url 'menu_with_table' table.table_number %}" class="btn btn-sm btn-info">
-                                    Menü & Siparişler
+                                <a href="{% url 'menu_with_table' t.table.table_number %}" class="btn btn-sm btn-info">
+                                    Menü
                                 </a>
                             </div>
                         </div>
@@ -90,6 +95,21 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Siparişler Modalı -->
+<div class="modal fade" id="ordersModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Masa Siparişleri</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="ordersModalBody">
+        Yükleniyor...
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -158,6 +178,69 @@ function updateTableStatus(tableId, status) {
         console.error('Error:', error);
         alert('Masa durumu güncellenemedi');
     });
+}
+
+function showOrdersModal(tableId) {
+    const modalBody = document.getElementById('ordersModalBody');
+    modalBody.innerHTML = '<div class="text-center text-muted">Yükleniyor...</div>';
+    fetch(`/tables/${tableId}/orders/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.orders.length === 0) {
+                modalBody.innerHTML = '<div class="text-center">Sipariş yok.</div>';
+            } else {
+                let html = '<ul class="list-group">';
+                data.orders.forEach(order => {
+                    html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>#${order.order_id} - <span class="badge bg-secondary">${order.status}</span></span>`;
+                    if(order.status === 'completed' && order.order_id) {
+                        html += `<button class="btn btn-danger btn-sm ms-2" onclick="deleteOrder('${order.order_id}', '${tableId}')">Sil</button>`;
+                    }
+                    html += `</li>`;
+                });
+                html += '</ul>';
+                modalBody.innerHTML = html;
+            }
+        });
+    const modal = new bootstrap.Modal(document.getElementById('ordersModal'));
+    modal.show();
+}
+
+function deleteOrder(orderId, tableId) {
+    if(!confirm('Bu siparişi silmek istediğinize emin misiniz?')) return;
+    fetch(`/tables/${tableId}/orders/${orderId}/delete/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.status === 'success') {
+            const modalEl = document.getElementById('ordersModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+        } else {
+            alert(data.message || 'Sipariş silinemedi!');
+        }
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
 }
 </script>
 {% endblock %} 

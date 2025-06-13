@@ -6,16 +6,16 @@
 <div class="container mt-5">
     <div class="row justify-content-center">
         <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="text-center">Ödeme</h3>
+            <div class="card shadow-lg border-0" style="border-radius: 20px; background: linear-gradient(90deg, #f8fafc 60%, #e0f7fa 100%);">
+                <div class="card-header bg-white border-0" style="border-radius: 20px 20px 0 0;">
+                    <h3 class="text-center fw-bold"><i class="bi bi-credit-card-2-front text-primary me-2"></i>Ödeme</h3>
                 </div>
-                <div class="card-body">
+                <div class="card-body p-4">
                     <div class="orders-summary mb-4">
-                        <h4>Ödenmemiş Siparişler</h4>
+                        <h4 class="fw-semibold mb-3"><i class="bi bi-receipt-cutoff text-info"></i> Ödenmemiş Siparişler</h4>
                         <form id="payment-form">
                             {% for order in orders %}
-                            <div class="order-card mb-3 p-3 border rounded">
+                            <div class="order-card mb-3 p-3 rounded shadow-sm border-0" style="background: #f1f8fa;">
                                 <div class="form-check mb-2">
                                     <input class="form-check-input order-checkbox" type="checkbox" 
                                            value="{{ order.order_id }}" id="order-{{ order.order_id }}"
@@ -32,43 +32,42 @@
                                     </div>
                                     {% endfor %}
                                 </div>
-                                <div class="order-total text-end">
-                                    <strong>Toplam: {{ order.total_amount }} TL</strong>
+                                <div class="order-total text-end mt-2">
+                                    <span class="badge bg-primary fs-6 px-3 py-2">Toplam: {{ order.total_amount }} TL</span>
                                 </div>
                             </div>
                             {% endfor %}
 
-                            <div class="total-amount mt-3">
-                                <h5>Seçili Siparişler Toplamı: <span id="selected-total">0.00</span> TL</h5>
+                            <div class="total-amount mt-4 mb-3 text-end">
+                                <span class="fs-5 fw-bold">Seçili Siparişler Toplamı: <span id="selected-total">0.00</span> TL</span>
                             </div>
 
                             <div class="payment-method mt-4">
-                                <h4>Ödeme Yöntemi</h4>
+                                <h4 class="fw-semibold mb-3"><i class="bi bi-wallet2 text-success"></i> Ödeme Yöntemi</h4>
                                 <div class="form-group mb-3">
-                                    <select class="form-control" id="payment-method" required>
+                                    <select class="form-select form-select-lg" id="payment-method" required>
                                         <option value="">Seçiniz</option>
                                         <option value="cash">Nakit</option>
                                         <option value="credit_card">Kredi Kartı</option>
                                         <option value="in_app">Uygulama İçi Ödeme</option>
                                     </select>
                                 </div>
-
                                 <div id="credit-card-details" class="d-none">
                                     <div class="form-group mb-3">
-                                        <label for="card-number">Kart Numarası</label>
-                                        <input type="text" class="form-control" id="card-number" placeholder="1234 5678 9012 3456">
+                                        <label for="card-number" class="form-label">Kart Numarası</label>
+                                        <input type="text" class="form-control form-control-lg" id="card-number" placeholder="1234 5678 9012 3456">
                                     </div>
                                     <div class="row">
                                         <div class="col-md-6">
                                             <div class="form-group mb-3">
-                                                <label for="expiry-date">Son Kullanma Tarihi</label>
-                                                <input type="text" class="form-control" id="expiry-date" placeholder="MM/YY">
+                                                <label for="expiry-date" class="form-label">Son Kullanma Tarihi</label>
+                                                <input type="text" class="form-control form-control-lg" id="expiry-date" placeholder="MM/YY">
                                             </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="form-group mb-3">
-                                                <label for="cvv">CVV</label>
-                                                <input type="text" class="form-control" id="cvv" placeholder="123">
+                                                <label for="cvv" class="form-label">CVV</label>
+                                                <input type="text" class="form-control form-control-lg" id="cvv" placeholder="123">
                                             </div>
                                         </div>
                                     </div>
@@ -76,7 +75,9 @@
                             </div>
 
                             <div class="text-center mt-4">
-                                <button type="submit" class="btn btn-primary btn-lg">Ödemeyi Tamamla</button>
+                                <button type="submit" class="btn btn-primary btn-lg px-5 py-2 shadow">
+                                    <i class="bi bi-cash-coin me-2"></i>Ödemeyi Tamamla
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -85,10 +86,25 @@
         </div>
     </div>
 </div>
+
+<!-- Ödeme Başarılı Modalı -->
+<div class="modal fade" id="paymentSuccessModal" tabindex="-1" aria-labelledby="paymentSuccessModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-5">
+        <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+        <h3 class="mt-3 mb-2">Ödeme Başarılı!</h3>
+        <p class="mb-4">Ödemeniz başarıyla tamamlandı.</p>
+        <button type="button" class="btn btn-success px-4" data-bs-dismiss="modal">Kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+let paidOrderIds = [];
 document.addEventListener('DOMContentLoaded', function() {
     const paymentMethod = document.getElementById('payment-method');
     const creditCardDetails = document.getElementById('credit-card-details');
@@ -114,7 +130,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateTotal() {
         let total = 0;
-        orderCheckboxes.forEach(checkbox => {
+        const currentCheckboxes = document.querySelectorAll('.order-checkbox');
+        currentCheckboxes.forEach(checkbox => {
             if (checkbox.checked) {
                 total += parseFloat(checkbox.dataset.amount);
             }
@@ -154,14 +171,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (data.status === 'success') {
-                alert('Ödeme başarıyla tamamlandı!');
-                window.location.href = '/'; // Ana sayfaya yönlendir
+                // Modern başarı popup'ı göster
+                paidOrderIds = selectedOrders;
+                const modal = new bootstrap.Modal(document.getElementById('paymentSuccessModal'));
+                modal.show();
             } else {
                 alert('Ödeme işlemi başarısız: ' + data.message);
             }
         } catch (error) {
             alert('Bir hata oluştu: ' + error.message);
         }
+    });
+
+    // Modal kapatılınca ödenen siparişleri ekrandan sil
+    const paymentSuccessModal = document.getElementById('paymentSuccessModal');
+    paymentSuccessModal.addEventListener('hidden.bs.modal', function () {
+        paidOrderIds.forEach(function(orderId) {
+            const card = document.getElementById('order-' + orderId)?.closest('.order-card');
+            if (card) card.remove();
+        });
+        paidOrderIds = [];
+        updateTotal();
     });
 });
 </script>

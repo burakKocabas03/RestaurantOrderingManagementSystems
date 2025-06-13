@@ -12,6 +12,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from django.db import connection
 import time
+from django.contrib import messages
 
 def index(request):
     # Ana sayfada masaları göster
@@ -151,12 +152,24 @@ def menu_view(request, table_number=None):
     
     return render(request, 'menu.html', context)
 
-@user_passes_test(is_waiter)
+def custom_permission_denied_view(request):
+    messages.error(request, 'Bu sayfaya erişim yetkiniz yok. Lütfen giriş yapın veya yetkili bir kullanıcı ile tekrar deneyin.')
+    return redirect('login')
+
+@user_passes_test(is_waiter, login_url='/permission-denied/')
 def table_management(request):
-    tables = Table.objects.all()
+    tables = Table.objects.all().order_by('table_number')
     servers = Users.objects.filter(user_type='waiter')
+    # Her masa için ilgili siparişleri ve durumlarını ekle
+    tables_with_orders = []
+    for table in tables:
+        orders = Order.objects.filter(table=table).order_by('-created_at')
+        tables_with_orders.append({
+            'table': table,
+            'orders': orders
+        })
     return render(request, 'table_management.html', {
-        'tables': tables,
+        'tables_with_orders': tables_with_orders,
         'servers': servers
     })
 
@@ -300,17 +313,19 @@ def place_order(request, table_number):
             if cart:
                 cart_items = Cartitem.objects.filter(cart=cart)
                 for cart_item in cart_items:
+                    quantity = cart_item.quantity if cart_item.quantity is not None else 0
+                    unit_price = cart_item.unit_price if cart_item.unit_price is not None else 0
                     order_item, created = Orderitem.objects.get_or_create(
                         order=order,
                         item=cart_item.item,
                         defaults={
-                            'quantity': cart_item.quantity,
-                            'unit_price': cart_item.unit_price,
+                            'quantity': quantity,
+                            'unit_price': unit_price,
                             'notes': cart_item.notes
                         }
                     )
                     if not created:
-                        order_item.quantity += cart_item.quantity
+                        order_item.quantity = (order_item.quantity if order_item.quantity is not None else 0) + quantity
                         order_item.save()
             
             # Update table status to occupied
@@ -415,12 +430,10 @@ def kitchen_display(request):
     ).prefetch_related(
         'orderitem_set',
         'orderitem_set__item'
-    ).order_by('created_at')
-    
+    ).order_by('-created_at')
     # Her sipariş için orderitem_set'i yükle
     for order in orders:
         order.orderitem_set.all()
-    
     context = {
         'orders': orders,
     }
@@ -490,12 +503,17 @@ def process_payment(request):
                     'message': 'Lütfen en az bir sipariş seçin'
                 }, status=400)
             
-            # Seçilen siparişleri işle
             orders = Order.objects.filter(order_id__in=order_ids)
-            table = orders.first().table  # İlk siparişin masasını al
-            
-            # Her sipariş için ödeme kaydı oluştur
-            for order in orders:
+            # Sadece ödenmemiş siparişleri seç
+            unpaid_orders = orders.exclude(status='completed')
+            if not unpaid_orders.exists():
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Seçilen siparişlerin hepsi zaten ödenmiş.'
+                }, status=400)
+            table = unpaid_orders.first().table  # İlk ödenmemiş siparişin masasını al
+            # Her ödenmemiş sipariş için ödeme kaydı oluştur
+            for order in unpaid_orders:
                 payment = Payment.objects.create(
                     order=order,
                     amount=amount,
@@ -503,7 +521,6 @@ def process_payment(request):
                     status='completed',
                     transaction_id=f"TRX{int(time.time())}"
                 )
-                
                 # Siparişi tamamlandı olarak işaretle
                 order.status = 'completed'
                 order.save()
@@ -512,7 +529,7 @@ def process_payment(request):
             remaining_orders = Order.objects.filter(
                 table=table,
                 status__in=['received', 'preparing', 'ready']
-            ).exists()
+            ).exists() if table else False
             
             # Eğer tüm siparişler tamamlandıysa masayı boşalt
             if not remaining_orders:
@@ -643,18 +660,20 @@ def cart_summary(request, table_number):
                     'total': 0
                 })
             
-            cart_items = Cartitem.objects.filter(cart=cart)
+            cart_items = Cartitem.objects.filter(cart=cart).order_by('cartitem_id')
             items = []
             total = 0
             
             for item in cart_items:
-                item_total = item.quantity * item.unit_price
+                quantity = item.quantity if item.quantity is not None else 0
+                unit_price = item.unit_price if item.unit_price is not None else 0
+                item_total = quantity * unit_price
                 total += item_total
                 items.append({
                     'item_id': item.item.item_id,
                     'name': item.item.name,
-                    'quantity': item.quantity,
-                    'unit_price': float(item.unit_price),
+                    'quantity': quantity,
+                    'unit_price': float(unit_price),
                     'total_price': float(item_total)
                 })
             
@@ -681,15 +700,15 @@ def get_order_details(request, order_id):
             order = get_object_or_404(Order, order_id=order_id)
             items = Orderitem.objects.filter(order=order)
             
-            total_amount = sum(item.quantity * item.unit_price for item in items)
+            total_amount = sum((item.quantity if item.quantity is not None else 0) * (item.unit_price if item.unit_price is not None else 0) for item in items)
             
             return JsonResponse({
                 'status': 'success',
                 'items': [{
                     'name': item.item.name,
-                    'quantity': item.quantity,
-                    'price': str(item.unit_price),
-                    'total': str(item.quantity * item.unit_price)
+                    'quantity': item.quantity if item.quantity is not None else 0,
+                    'price': str(item.unit_price if item.unit_price is not None else 0),
+                    'total': str((item.quantity if item.quantity is not None else 0) * (item.unit_price if item.unit_price is not None else 0))
                 } for item in items],
                 'total_amount': str(total_amount)
             })
@@ -738,7 +757,7 @@ def remove_from_cart(request, table_number):
             if cart_item:
                 if cart_item.quantity > 1:
                     # Miktarı 1 azalt
-                    cart_item.quantity -= 1
+                    cart_item.quantity = (cart_item.quantity if cart_item.quantity is not None else 0) - 1
                     cart_item.save()
                     return JsonResponse({
                         'status': 'success',
@@ -767,4 +786,32 @@ def remove_from_cart(request, table_number):
         'status': 'error',
         'message': 'Geçersiz istek metodu'
     }, status=405)
+
+@login_required
+def table_orders_api(request, table_id):
+    table = get_object_or_404(Table, table_id=table_id)
+    orders = Order.objects.filter(table=table).order_by('-created_at')
+    orders_data = []
+    for order in orders:
+        orders_data.append({
+            'order_id': order.order_id,
+            'status': order.status,
+            'created_at': order.created_at.strftime('%Y-%m-%d %H:%M'),
+        })
+    return JsonResponse({'orders': orders_data})
+
+@csrf_exempt
+def delete_order(request, table_id, order_id):
+    if request.method == 'POST':
+        from .models import Order, Orderitem
+        order = get_object_or_404(Order, order_id=order_id, table_id=table_id)
+        if order.status == 'completed':
+            # Önce orderitem'ları sil
+            Orderitem.objects.filter(order=order).delete()
+            order.delete()
+            return JsonResponse({'status': 'success'})
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Sadece tamamlanmış siparişler silinebilir!'}, status=400)
+    return JsonResponse({'status': 'error', 'message': 'Geçersiz istek metodu'}, status=405)
+
 # Create your views here.
