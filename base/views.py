@@ -1,18 +1,23 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
-from .models import Menuitem, Category, Order, Orderitem, Table, Cart, Cartitem, Users, Payment
+from .models import Menuitem, Category, Order, Orderitem, Table, Cart, Cartitem, Users, Payment, Staff
 from django.contrib.auth.decorators import login_required
 import json
 from datetime import datetime, timezone
 from django.db import models
 from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.decorators import user_passes_test
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User as DjangoUser
 from django.utils import timezone
 from django.db import connection
 import time
 from django.contrib import messages
+from django.views.decorators.http import require_POST
+from decimal import Decimal
+import decimal
+from django.db import transaction
+from django.contrib.auth.hashers import make_password
 
 def index(request):
     # Ana sayfada masaları göster
@@ -44,11 +49,18 @@ def register(request):
         )
         
         # Django auth sistemine de ekle
-        django_user = User.objects.create_user(
+        django_user = DjangoUser.objects.create_user(
             username=username,
             password=password,
             first_name=fullname
         )
+        
+        # Eğer personel ise Staff kaydı oluştur
+        if user_type in ['waiter', 'manager', 'kitchen']:
+            Staff.objects.create(
+                user=user,
+                user_type=user_type
+            )
         
         # Otomatik giriş yap
         login(request, django_user)
@@ -92,38 +104,42 @@ def login_view(request):
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
-        
         try:
             # Önce kendi Users modelimizden kontrol edelim
             custom_user = Users.objects.get(username=username)
-            
             if custom_user.password == password:  # Gerçek uygulamada hash'lenmiş şifre kullanılmalı
                 # Django'nun auth sistemine login
                 try:
-                    django_user = User.objects.get(username=username)
-                except User.DoesNotExist:
+                    django_user = DjangoUser.objects.get(username=username)
+                except DjangoUser.DoesNotExist:
                     # Django user yoksa oluştur
-                    django_user = User.objects.create_user(
+                    django_user = DjangoUser.objects.create_user(
                         username=username,
                         password=password,
                         first_name=custom_user.fullname
                     )
-                
+                # Staff kaydı varsa ilişkilendir
+                try:
+                    staff = Staff.objects.get(user=custom_user)
+                except Staff.DoesNotExist:
+                    if custom_user.user_type in ['waiter', 'manager', 'kitchen']:
+                        staff = Staff.objects.create(
+                            user=custom_user,
+                            user_type=custom_user.user_type
+                        )
                 login(request, django_user)
-                
+                # Admin ise doğrudan admin_dashboard'a yönlendir
+                if custom_user.user_type == 'admin' or username == 'admin':
+                    return redirect('admin_dashboard')
                 # Kullanıcı tipine göre yönlendirme
                 if custom_user.user_type == 'waiter':
                     return redirect('table_management')
-                elif custom_user.user_type == 'admin':
-                    return redirect('admin_dashboard')
                 else:
                     return redirect('menu')
             else:
-                return render(request, 'login.html', {'error': 'Invalid password'})
-                
+                return render(request, 'login.html', {'error': 'Geçersiz şifre'})
         except Users.DoesNotExist:
-            return render(request, 'login.html', {'error': 'User not found'})
-            
+            return render(request, 'login.html', {'error': 'Kullanıcı bulunamadı'})
     return render(request, 'login.html')
 
 def menu_view(request, table_number=None):
@@ -156,18 +172,41 @@ def custom_permission_denied_view(request):
     messages.error(request, 'Bu sayfaya erişim yetkiniz yok. Lütfen giriş yapın veya yetkili bir kullanıcı ile tekrar deneyin.')
     return redirect('login')
 
-@user_passes_test(is_waiter, login_url='/permission-denied/')
+@login_required
 def table_management(request):
+    # Kullanıcının staff olup olmadığını kontrol et
+    try:
+        # Önce Users modelinden kullanıcıyı bul
+        users_instance = Users.objects.get(username=request.user.username)
+        # Sonra Staff modelinden staff'ı bul
+        staff = Staff.objects.get(user=users_instance)
+    except (Users.DoesNotExist, Staff.DoesNotExist):
+        messages.error(request, 'Bu sayfaya erişim yetkiniz yok.')
+        return redirect('permission_denied')
+        
     tables = Table.objects.all().order_by('table_number')
-    servers = Users.objects.filter(user_type='waiter')
+    servers = Staff.objects.filter(user_type='waiter')
+    
     # Her masa için ilgili siparişleri ve durumlarını ekle
     tables_with_orders = []
     for table in tables:
         orders = Order.objects.filter(table=table).order_by('-created_at')
+        
+        # Masanın bekleyen nakit ödemesi var mı kontrol et
+        pending_payment = None
+        if orders.exists():
+            pending_payment = Payment.objects.filter(
+                order__table=table,
+                payment_method='cash',
+                status='waiter_approval'
+            ).first()
+        
         tables_with_orders.append({
             'table': table,
-            'orders': orders
+            'orders': orders,
+            'pending_payment': pending_payment
         })
+    
     return render(request, 'table_management.html', {
         'tables_with_orders': tables_with_orders,
         'servers': servers
@@ -511,35 +550,52 @@ def process_payment(request):
                     'status': 'error',
                     'message': 'Seçilen siparişlerin hepsi zaten ödenmiş.'
                 }, status=400)
+            
             table = unpaid_orders.first().table  # İlk ödenmemiş siparişin masasını al
+            
             # Her ödenmemiş sipariş için ödeme kaydı oluştur
             for order in unpaid_orders:
                 payment = Payment.objects.create(
                     order=order,
                     amount=amount,
                     payment_method=payment_method,
-                    status='completed',
-                    transaction_id=f"TRX{int(time.time())}"
+                    status='pending'  # Nakit ödemeler için başlangıç durumu
                 )
-                # Siparişi tamamlandı olarak işaretle
-                order.status = 'completed'
-                order.save()
+                
+                # Nakit ödeme ise garson onayı bekleyecek
+                if payment_method == 'cash':
+                    payment.status = 'waiter_approval'
+                    payment.save()
+                    return JsonResponse({
+                        'status': 'pending',
+                        'message': 'Nakit ödeme garson onayı bekliyor',
+                        'payment_id': payment.id
+                    })
+                else:
+                    # Diğer ödeme yöntemleri için direkt tamamlandı
+                    payment.status = 'completed'
+                    payment.save()
+                    
+                    # Siparişi tamamlandı olarak işaretle
+                    order.status = 'completed'
+                    order.save()
             
-            # Masanın tüm siparişleri tamamlandı mı kontrol et
-            remaining_orders = Order.objects.filter(
-                table=table,
-                status__in=['received', 'preparing', 'ready']
-            ).exists() if table else False
-            
-            # Eğer tüm siparişler tamamlandıysa masayı boşalt
-            if not remaining_orders:
-                table.table_status = 'available'
-                table.save()
-            
-            return JsonResponse({
-                'status': 'success',
-                'message': 'Ödeme başarıyla tamamlandı'
-            })
+            # Nakit olmayan ödemeler için masanın durumunu kontrol et
+            if payment_method != 'cash':
+                remaining_orders = Order.objects.filter(
+                    table=table,
+                    status__in=['received', 'preparing', 'ready']
+                ).exists()
+                
+                # Eğer tüm siparişler tamamlandıysa masayı boşalt
+                if not remaining_orders:
+                    table.table_status = 'available'
+                    table.save()
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'message': 'Ödeme başarıyla tamamlandı'
+                })
             
         except Exception as e:
             return JsonResponse({
@@ -812,6 +868,189 @@ def delete_order(request, table_id, order_id):
             return JsonResponse({'status': 'success'})
         else:
             return JsonResponse({'status': 'error', 'message': 'Sadece tamamlanmış siparişler silinebilir!'}, status=400)
+    return JsonResponse({'status': 'error', 'message': 'Geçersiz istek metodu'}, status=405)
+
+@login_required
+def pending_cash_payments(request):
+    # Sadece garsonlar erişebilir
+    try:
+        # Önce Users modelinden kullanıcıyı bul
+        users_instance = Users.objects.get(username=request.user.username)
+        # Sonra Staff modelinden staff'ı bul
+        staff = Staff.objects.get(user=users_instance)
+        if staff.user_type != 'waiter':
+            messages.error(request, 'Bu sayfaya sadece garsonlar erişebilir.')
+            return redirect('permission_denied')
+    except (Users.DoesNotExist, Staff.DoesNotExist):
+        messages.error(request, 'Bu sayfaya sadece garsonlar erişebilir.')
+        return redirect('permission_denied')
+    
+    # Garsonun onay bekleyen nakit ödemeleri
+    pending_payments = Payment.objects.filter(
+        payment_method='cash',
+        status='waiter_approval',
+    ).select_related('order', 'order__table').order_by('-created_at')
+    
+    return render(request, 'base/pending_cash_payments.html', {
+        'pending_payments': pending_payments
+    })
+
+@login_required
+@require_POST
+def approve_cash_payment(request, payment_id):
+    try:
+        # Önce Users modelinden kullanıcıyı bul
+        users_instance = Users.objects.get(username=request.user.username)
+        # Sonra Staff modelinden staff'ı bul
+        staff = Staff.objects.get(user=users_instance)
+        if staff.user_type != 'waiter':
+            return JsonResponse({'status': 'error', 'message': 'Yetkisiz erişim'}, status=403)
+    except (Users.DoesNotExist, Staff.DoesNotExist):
+        return JsonResponse({'status': 'error', 'message': 'Yetkisiz erişim'}, status=403)
+    
+    try:
+        payment = Payment.objects.get(id=payment_id, status='waiter_approval')
+        
+        data = json.loads(request.body)
+        cash_received = Decimal(data.get('cash_received', '0'))
+        
+        if cash_received < payment.amount:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Alınan nakit tutarı, ödeme tutarından az olamaz'
+            }, status=400)
+        
+        # Ödemeyi onayla
+        payment.status = 'completed'
+        payment.waiter = staff
+        payment.waiter_approval_time = timezone.now()
+        payment.cash_received = cash_received
+        payment.cash_returned = cash_received - payment.amount
+        payment.save()
+        
+        # Siparişi tamamlandı olarak işaretle
+        order = payment.order
+        order.status = 'completed'
+        order.save()
+        
+        # Masanın durumunu kontrol et
+        table = order.table
+        if not Order.objects.filter(table=table, status__in=['received', 'preparing', 'ready']).exists():
+            table.table_status = 'available'
+            table.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Ödeme başarıyla onaylandı'
+        })
+        
+    except Payment.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Ödeme bulunamadı'
+        }, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Geçersiz veri formatı'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@login_required
+def get_pending_payments_count(request):
+    try:
+        # Önce Users modelinden kullanıcıyı bul
+        users_instance = Users.objects.get(username=request.user.username)
+        # Sonra Staff modelinden staff'ı bul
+        staff = Staff.objects.get(user=users_instance)
+        if staff.user_type != 'waiter':
+            return JsonResponse({'count': 0})
+    except (Users.DoesNotExist, Staff.DoesNotExist):
+        return JsonResponse({'count': 0})
+    
+    count = Payment.objects.filter(
+        payment_method='cash',
+        status='waiter_approval'
+    ).count()
+    
+    return JsonResponse({'count': count})
+
+@login_required
+@require_POST
+def add_server(request):
+    try:
+        data = json.loads(request.body)
+        
+        with transaction.atomic():
+            # Django User oluştur
+            django_user = DjangoUser.objects.create_user(
+                username=data['username'],
+                password=data['password'],
+                first_name=data['fullname']
+            )
+            # Kullanıcı oluştur
+            user = Users.objects.create(
+                fullname=data['fullname'],
+                username=data['username'],
+                password=make_password(data['password']),
+                phone_number=data.get('phone_number'),
+                user_type='waiter',
+                role='waiter'
+            )
+            # Staff kaydı oluştur
+            staff = Staff.objects.create(
+                user=user,
+                user_type='waiter'
+            )
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Garson başarıyla eklendi'
+            })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=400)
+
+@csrf_exempt
+def bulk_delete_orders(request, table_id):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            order_ids = data.get('order_ids', [])
+            if not order_ids:
+                return JsonResponse({'status': 'error', 'message': 'Hiçbir sipariş seçilmedi!'}, status=400)
+            deleted_count = 0
+            for oid in order_ids:
+                try:
+                    order = Order.objects.get(order_id=oid, table_id=table_id, status='completed')
+                    Orderitem.objects.filter(order=order).delete()
+                    order.delete()
+                    deleted_count += 1
+                except Order.DoesNotExist:
+                    continue
+            if deleted_count > 0:
+                return JsonResponse({'status': 'success', 'message': f'{deleted_count} sipariş silindi.'})
+            else:
+                return JsonResponse({'status': 'error', 'message': 'Hiçbir sipariş silinemedi!'}, status=400)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+    return JsonResponse({'status': 'error', 'message': 'Geçersiz istek metodu'}, status=405)
+
+@csrf_exempt
+def remove_waiter(request, table_id):
+    if request.method == 'POST':
+        try:
+            table = Table.objects.get(table_id=table_id)
+            table.user = None
+            table.save()
+            return JsonResponse({'status': 'success', 'message': 'Garson kaldırıldı'})
+        except Table.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Masa bulunamadı!'}, status=404)
     return JsonResponse({'status': 'error', 'message': 'Geçersiz istek metodu'}, status=405)
 
 # Create your views here.

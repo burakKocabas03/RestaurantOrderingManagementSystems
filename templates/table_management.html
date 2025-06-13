@@ -14,6 +14,13 @@
                         <div class="table-card p-3 border rounded text-center position-relative" 
                              data-table-id="{{ t.table.table_id }}"
                              data-status="{{ t.table.table_status }}">
+                            {% if t.pending_payment %}
+                            <div class="position-absolute top-0 start-0 m-2">
+                                <button type="button" class="btn btn-danger btn-sm" onclick="showPendingPaymentModal({{ t.pending_payment.id }}, {{ t.pending_payment.amount }})">
+                                    <i class="bi bi-cash"></i>
+                                </button>
+                            </div>
+                            {% endif %}
                             <button type="button" class="btn btn-sm btn-warning position-absolute top-0 end-0 m-2" onclick="event.stopPropagation(); showOrdersModal({{ t.table.table_id }})">Sipariş</button>
                             <h4>
                               <a href="{% url 'menu_with_table' t.table.table_number %}" class="text-decoration-none text-dark fw-bold" style="cursor:pointer;">
@@ -46,21 +53,49 @@
         
         <!-- Server List -->
         <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Garsonlar</h5>
+            <div class="card shadow-lg border-0" style="border-radius: 15px;">
+                <div class="card-header bg-primary text-white py-3" style="border-radius: 15px 15px 0 0;">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-people-fill me-2"></i>Garsonlar
+                    </h5>
                 </div>
-                <div class="card-body">
-                    <ul class="list-group">
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
                         {% for server in servers %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            {{ server.fullname }}
-                            <span class="badge bg-primary rounded-pill">
-                                {{ server.table_set.count }} Masa
-                            </span>
-                        </li>
+                        <div class="list-group-item border-0 py-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="avatar bg-light rounded-circle p-2">
+                                        <i class="bi bi-person-fill text-primary fs-4"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0">{{ server.user.fullname }}</h6>
+                                        <span class="badge bg-primary rounded-pill">
+                                            {{ server.user.table_set.count }} Masa
+                                        </span>
+                                    </div>
+                                    <small class="text-muted">
+                                        {% if server.user.table_set.count > 0 %}
+                                        Masalar: 
+                                        {% for table in server.user.table_set.all %}
+                                            {{ table.table_number }}{% if not forloop.last %}, {% endif %}
+                                        {% endfor %}
+                                        {% else %}
+                                        Aktif masa yok
+                                        {% endif %}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-4">
+                            <i class="bi bi-emoji-frown text-muted fs-1"></i>
+                            <p class="text-muted mt-2">Henüz garson eklenmemiş.</p>
+                        </div>
                         {% endfor %}
-                    </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -83,15 +118,23 @@
                         <select class="form-select" id="serverId" name="serverId" required>
                             <option value="">Garson Seçin</option>
                             {% for server in servers %}
-                            <option value="{{ server.user_id }}">{{ server.fullname }}</option>
+                            <option value="{{ server.user.user_id }}">{{ server.user.fullname }}</option>
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="mb-3" id="removeWaiterDiv" style="display:none;">
+                        <button type="button" class="btn btn-outline-danger w-100" id="removeWaiterBtn">
+                            <i class="bi bi-person-x"></i> Garsonu Kaldır
+                        </button>
+                    </div>
                 </form>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer d-flex justify-content-end gap-2">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
                 <button type="button" class="btn btn-primary" onclick="assignServer()">Ata</button>
+                <button type="button" class="btn btn-outline-danger" id="removeWaiterBtn" style="display:none;">
+                    <i class="bi bi-person-x"></i> Garsonu Kaldır
+                </button>
             </div>
         </div>
     </div>
@@ -108,6 +151,101 @@
       <div class="modal-body" id="ordersModalBody">
         Yükleniyor...
       </div>
+      <div class="modal-footer d-flex justify-content-between align-items-center">
+        <button type="button" class="btn btn-danger" id="bulkDeleteBtn" style="display:none;">
+          <i class="bi bi-trash"></i> Seçili Siparişleri Sil
+        </button>
+        <span id="selectedCount" class="text-muted small"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Nakit Ödeme Onay Modalı -->
+<div class="modal fade" id="pendingPaymentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nakit Ödeme Onayı</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="approvePaymentForm">
+            <input type="hidden" id="paymentId">
+            <div class="mb-3">
+                <label for="paymentAmount" class="form-label">Ödenecek Tutar:</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="paymentAmount" readonly>
+                    <span class="input-group-text">TL</span>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="cashReceived" class="form-label">Alınan Nakit:</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" id="cashReceived" step="0.01" required>
+                    <span class="input-group-text">TL</span>
+                </div>
+            </div>
+            <div class="mb-3 change-amount" style="display: none;">
+                <label class="form-label">Para Üstü:</label>
+                <div class="alert alert-info mb-0">
+                    <span class="change-value">0.00</span> TL
+                </div>
+            </div>
+            <div class="alert alert-danger error-message" style="display: none;">
+            </div>
+            <button type="submit" class="btn btn-success w-100">
+                <i class="bi bi-check-circle-fill me-2"></i>Ödemeyi Onayla
+            </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sipariş Silme Onay Modalı -->
+<div class="modal fade" id="orderDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-4">
+        <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 3rem;"></i>
+        <h4 class="mt-3 mb-2">Emin misiniz?</h4>
+        <p class="mb-3">Bu siparişi silmek istediğinize emin misiniz?</p>
+        <div class="d-flex justify-content-center gap-3">
+          <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn btn-danger px-4" id="confirmDeleteOrderBtn">Sil</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sipariş Silme Başarı Modalı -->
+<div class="modal fade" id="orderDeleteSuccessModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-5">
+        <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
+        <h3 class="mt-3 mb-2">Sipariş Silindi</h3>
+        <p class="mb-0">Sipariş başarıyla silindi.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toplu Silme Onay Modalı -->
+<div class="modal fade" id="bulkDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-4">
+        <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 3rem;"></i>
+        <h4 class="mt-3 mb-2">Emin misiniz?</h4>
+        <p class="mb-3">Seçili siparişleri silmek istediğinize emin misiniz?</p>
+        <div class="d-flex justify-content-center gap-3">
+          <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn btn-danger px-4" id="confirmBulkDeleteBtn">Sil</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -117,6 +255,16 @@
 <script>
 function showAssignServerModal(tableId) {
     document.getElementById('tableId').value = tableId;
+    // Garson atanmış mı kontrolü için AJAX ile masa bilgisini çek
+    fetch(`/tables/${tableId}/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.waiter) {
+                document.getElementById('removeWaiterBtn').style.display = '';
+            } else {
+                document.getElementById('removeWaiterBtn').style.display = 'none';
+            }
+        });
     const modal = new bootstrap.Modal(document.getElementById('assignServerModal'));
     modal.show();
 }
@@ -180,7 +328,12 @@ function updateTableStatus(tableId, status) {
     });
 }
 
+let selectedOrders = [];
+let currentTableId = null;
+
 function showOrdersModal(tableId) {
+    currentTableId = tableId;
+    selectedOrders = [];
     const modalBody = document.getElementById('ordersModalBody');
     modalBody.innerHTML = '<div class="text-center text-muted">Yükleniyor...</div>';
     fetch(`/tables/${tableId}/orders/`)
@@ -191,8 +344,17 @@ function showOrdersModal(tableId) {
             } else {
                 let html = '<ul class="list-group">';
                 data.orders.forEach(order => {
-                    html += `<li class="list-group-item d-flex justify-content-between align-items-center">
-                        <span>#${order.order_id} - <span class="badge bg-secondary">${order.status}</span></span>`;
+                    let badgeClass = 'bg-secondary';
+                    let statusText = order.status;
+                    if(order.status === 'received') { badgeClass = 'bg-warning text-dark'; statusText = 'Alındı'; }
+                    else if(order.status === 'preparing') { badgeClass = 'bg-info text-dark'; statusText = 'Hazırlanıyor'; }
+                    else if(order.status === 'ready') { badgeClass = 'bg-success'; statusText = 'Hazır'; }
+                    else if(order.status === 'completed') { badgeClass = 'bg-secondary'; statusText = 'Tamamlandı'; }
+                    html += `<li class="list-group-item d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center gap-2">
+                            <input class="form-check-input order-checkbox" type="checkbox" value="${order.order_id}" id="orderCheck${order.order_id}" onchange="toggleOrderSelection('${order.order_id}')">
+                            <span>#${order.order_id} - <span class="badge ${badgeClass}">${statusText}</span></span>
+                        </div>`;
                     if(order.status === 'completed' && order.order_id) {
                         html += `<button class="btn btn-danger btn-sm ms-2" onclick="deleteOrder('${order.order_id}', '${tableId}')">Sil</button>`;
                     }
@@ -201,13 +363,159 @@ function showOrdersModal(tableId) {
                 html += '</ul>';
                 modalBody.innerHTML = html;
             }
+            updateBulkDeleteUI();
         });
     const modal = new bootstrap.Modal(document.getElementById('ordersModal'));
     modal.show();
 }
 
+function toggleOrderSelection(orderId) {
+    const idx = selectedOrders.indexOf(orderId);
+    if (idx === -1) {
+        selectedOrders.push(orderId);
+    } else {
+        selectedOrders.splice(idx, 1);
+    }
+    updateBulkDeleteUI();
+}
+
+function updateBulkDeleteUI() {
+    const btn = document.getElementById('bulkDeleteBtn');
+    const count = document.getElementById('selectedCount');
+    if (selectedOrders.length > 0) {
+        btn.style.display = '';
+        count.textContent = `${selectedOrders.length} sipariş seçildi`;
+    } else {
+        btn.style.display = 'none';
+        count.textContent = '';
+    }
+}
+
+document.getElementById('bulkDeleteBtn').onclick = function() {
+    const confirmModal = new bootstrap.Modal(document.getElementById('bulkDeleteConfirmModal'));
+    confirmModal.show();
+};
+
+document.getElementById('confirmBulkDeleteBtn').onclick = function() {
+    if (selectedOrders.length === 0) return;
+    fetch(`/tables/${currentTableId}/orders/bulk-delete/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({ order_ids: selectedOrders })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const confirmModalEl = document.getElementById('bulkDeleteConfirmModal');
+        const confirmModal = bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModal) confirmModal.hide();
+        if(data.status === 'success') {
+            const ordersModalEl = document.getElementById('ordersModal');
+            const ordersModal = bootstrap.Modal.getInstance(ordersModalEl);
+            if (ordersModal) ordersModal.hide();
+            // Başarı modalını göster
+            const successModal = new bootstrap.Modal(document.getElementById('orderDeleteSuccessModal'));
+            successModal.show();
+            setTimeout(() => {
+                successModal.hide();
+                location.reload();
+            }, 1500);
+        } else {
+            alert(data.message || 'Siparişler silinemedi!');
+        }
+    });
+};
+
+function showPendingPaymentModal(paymentId, amount) {
+    document.getElementById('paymentId').value = paymentId;
+    document.getElementById('paymentAmount').value = amount;
+    document.getElementById('cashReceived').value = '';
+    document.querySelector('.change-amount').style.display = 'none';
+    
+    const modal = new bootstrap.Modal(document.getElementById('pendingPaymentModal'));
+    modal.show();
+}
+
+// Para üstü hesaplama
+document.getElementById('cashReceived').addEventListener('input', function() {
+    const amount = parseFloat(document.getElementById('paymentAmount').value);
+    const received = parseFloat(this.value) || 0;
+    const change = received - amount;
+    
+    const changeAmount = document.querySelector('.change-amount');
+    const changeValue = document.querySelector('.change-value');
+    const errorMessage = document.querySelector('.error-message');
+    
+    if (received >= amount) {
+        changeAmount.style.display = 'block';
+        changeValue.textContent = change.toFixed(2);
+        errorMessage.style.display = 'none';
+    } else {
+        changeAmount.style.display = 'none';
+        if (received > 0) {
+            errorMessage.style.display = 'block';
+            errorMessage.textContent = 'Alınan nakit tutarı, ödenecek tutardan az olamaz!';
+        } else {
+            errorMessage.style.display = 'none';
+        }
+    }
+});
+
+// Ödeme onaylama
+document.getElementById('approvePaymentForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const paymentId = document.getElementById('paymentId').value;
+    const amount = parseFloat(document.getElementById('paymentAmount').value);
+    const cashReceived = parseFloat(document.getElementById('cashReceived').value);
+    const errorMessage = document.querySelector('.error-message');
+    
+    if (cashReceived < amount) {
+        errorMessage.style.display = 'block';
+        errorMessage.textContent = 'Alınan nakit tutarı, ödenecek tutardan az olamaz!';
+        return;
+    }
+    
+    fetch(`/approve-cash-payment/${paymentId}/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            cash_received: cashReceived
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            const modalEl = document.getElementById('pendingPaymentModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+            location.reload();
+        } else {
+            errorMessage.style.display = 'block';
+            errorMessage.textContent = data.message || 'Ödeme onaylanamadı';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        errorMessage.style.display = 'block';
+        errorMessage.textContent = 'Ödeme onaylanamadı';
+    });
+});
+
+let pendingDeleteOrder = { orderId: null, tableId: null };
 function deleteOrder(orderId, tableId) {
-    if(!confirm('Bu siparişi silmek istediğinize emin misiniz?')) return;
+    pendingDeleteOrder.orderId = orderId;
+    pendingDeleteOrder.tableId = tableId;
+    const confirmModal = new bootstrap.Modal(document.getElementById('orderDeleteConfirmModal'));
+    confirmModal.show();
+}
+document.getElementById('confirmDeleteOrderBtn').onclick = function() {
+    const { orderId, tableId } = pendingDeleteOrder;
     fetch(`/tables/${tableId}/orders/${orderId}/delete/`, {
         method: 'POST',
         headers: {
@@ -218,10 +526,20 @@ function deleteOrder(orderId, tableId) {
     })
     .then(response => response.json())
     .then(data => {
+        const confirmModalEl = document.getElementById('orderDeleteConfirmModal');
+        const confirmModal = bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModal) confirmModal.hide();
         if(data.status === 'success') {
             const modalEl = document.getElementById('ordersModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if (modal) modal.hide();
+            // Başarı modalını göster
+            const successModal = new bootstrap.Modal(document.getElementById('orderDeleteSuccessModal'));
+            successModal.show();
+            setTimeout(() => {
+                successModal.hide();
+                location.reload();
+            }, 1500);
         } else {
             alert(data.message || 'Sipariş silinemedi!');
         }
@@ -242,5 +560,25 @@ function getCookie(name) {
     }
     return cookieValue;
 }
+
+document.getElementById('removeWaiterBtn').onclick = function() {
+    const tableId = document.getElementById('tableId').value;
+    fetch(`/tables/${tableId}/remove-waiter/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert(data.message || 'Garson kaldırılamadı!');
+        }
+    });
+};
 </script>
 {% endblock %} 

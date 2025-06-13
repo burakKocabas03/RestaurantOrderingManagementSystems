@@ -46,5 +46,11 @@ urlpatterns = [
     path('order-details/<int:order_id>/', views.get_order_details, name='get_order_details'),
     path('tables/<int:table_id>/orders/', views.table_orders_api, name='table_orders_api'),
     path('tables/<int:table_id>/orders/<int:order_id>/delete/', views.delete_order, name='delete_order'),
+    path('tables/<int:table_id>/orders/bulk-delete/', views.bulk_delete_orders, name='bulk_delete_orders'),
     path('permission-denied/', views.custom_permission_denied_view, name='permission_denied'),
+    path('pending-cash-payments/', views.pending_cash_payments, name='pending_cash_payments'),
+    path('approve-cash-payment/<int:payment_id>/', views.approve_cash_payment, name='approve_cash_payment'),
+    path('api/pending-payments-count/', views.get_pending_payments_count, name='pending_payments_count'),
+    path('api/add-server/', views.add_server, name='add_server'),
+    path('tables/<int:table_id>/remove-waiter/', views.remove_waiter, name='remove_waiter'),
 ]
